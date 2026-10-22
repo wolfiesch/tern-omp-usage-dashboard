@@ -1,0 +1,56 @@
+[data-surface='plugin.omp-usage.dashboard'] {
+	font-family: var(--sans);
+}
+
+[data-surface='plugin.omp-usage.dashboard'] [data-role='omp-usage.header'] {
+	justify-content: space-between;
+	align-items: center;
+	font-size: 1.25em;
+}
+
+[data-surface='plugin.omp-usage.dashboard'] [data-role='omp-usage.summary'] {
+	gap: 6px;
+}
+
+[data-surface='plugin.omp-usage.dashboard'] [data-role='omp-usage.primary'] {
+	gap: 12px;
+}
+
+[data-surface='plugin.omp-usage.dashboard'] [data-role='omp-usage.panel'] {
+	border-radius: var(--r-card);
+	background: var(--card);
+}
+
+[data-surface='plugin.omp-usage.dashboard'] [data-role='omp-usage.panel'] > .sf-card-head .sf-head .sf-t-strong {
+	font-size: 1.35em;
+	font-weight: 600;
+	color: var(--t1);
+}
+
+[data-surface='plugin.omp-usage.dashboard'] [data-role='omp-usage.panel'] > .sf-card-head {
+	padding-bottom: 8px;
+}
+
+[data-surface='plugin.omp-usage.dashboard'] [data-role='omp-usage.account-name'] {
+	font-size: 1.05em;
+	color: var(--t1);
+}
+
+[data-surface='plugin.omp-usage.dashboard'] [data-role='omp-usage.limits'] {
+	font-size: 0.95em;
+	color: var(--t2);
+	font-variant-numeric: tabular-nums;
+}
+
+[data-surface='plugin.omp-usage.dashboard'] [data-role='omp-usage.limits'] .sf-tbl-row.head {
+	display: none;
+}
+
+[data-surface='plugin.omp-usage.dashboard'] [data-role='omp-usage.details'] {
+	font-size: 0.9em;
+	color: var(--t3);
+}
+
+[data-surface='plugin.omp-usage.dashboard'] [data-role='omp-usage.others'] {
+	color: var(--t2);
+}
