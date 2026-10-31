@@ -67,8 +67,9 @@ tern.block.define("dashboard", {
 })
 
 local function tick()
-	collector:tick()
+	-- Re-arm before work: a failed publish (e.g. disk full) must not end the loop for good.
 	tern.timer(5000, tick)
+	pcall(collector.tick, collector)
 end
 -- Defer IO until the entries and restored blocks have loaded.
 tern.timer(100, tick)

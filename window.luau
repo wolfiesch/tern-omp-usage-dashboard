@@ -29,7 +29,7 @@ tern.chrome.status(function()
 	return {{ text = current.text, tone = current.tone, icon = "gauge", command = "plugin.omp-usage.open" }}
 end)
 
-local function poll()
+local function pollOnce()
 	local ok, record = pcall(tern.kv.get, "collector")
 	local nextValue
 	if not ok then
@@ -44,7 +44,12 @@ local function poll()
 		current = nextValue
 		tern.chrome.refresh()
 	end
+end
+
+local function poll()
+	-- Re-arm before work so one slow or failed read cannot freeze the status segment.
 	tern.timer(2000, poll)
+	pcall(pollOnce)
 end
 
 -- Window callbacks only read the small summary; provider polling belongs to the host.
