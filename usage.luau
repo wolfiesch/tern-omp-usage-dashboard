@@ -1001,43 +1001,36 @@ local function shortNames(labels: { string }): { string }
 	return names
 end
 
--- The account-wide weekly bucket (the most used one if several), else the
--- account-wide bucket with the longest window. Tier/model buckets are fallbacks only.
+-- The account-wide 7-day bucket with a reported amount (the most used one if
+-- several); a tier/model 7-day bucket only when no account-wide one exists.
 local function weeklyLimit(limits: { Limit }): Limit?
 	local best: Limit? = nil
-	local function better(l: Limit, cur: Limit?): boolean
-		if cur == nil then
-			return true
-		end
-		if l.scoped ~= cur.scoped then
-			return not l.scoped
-		end
-		local lw, cw = l.windowMs == WEEK_MS, cur.windowMs == WEEK_MS
-		if lw ~= cw then
-			return lw
-		end
-		if not lw and (l.windowMs or 0) ~= (cur.windowMs or 0) then
-			return (l.windowMs or 0) > (cur.windowMs or 0)
-		end
-		return (l.usedFraction or -1) > (cur.usedFraction or -1)
-	end
 	for _, l in limits do
-		if better(l, best) then
-			best = l
+		if l.windowMs == WEEK_MS and l.usedFraction ~= nil then
+			if best == nil
+				or (best.scoped and not l.scoped)
+				or (best.scoped == l.scoped and (l.usedFraction :: number) > (best.usedFraction :: number))
+			then
+				best = l
+			end
 		end
 	end
 	return best
 end
 
+-- One segment per account with fresh 7-day data. Stale, logged-out and
+-- non-weekly accounts are left out rather than shown with old or other numbers.
 local function accountSegments(snapshot: Snapshot, now: number): { Segment }
-	local rows: { { provider: string, account: Account } } = {}
+	local rows: { { provider: string, limit: Limit } } = {}
 	local labels: { string } = {}
 	for _, sp in STATUS_PROVIDERS do
 		for _, p in snapshot.providers do
 			if p.id == sp.id then
 				for _, a in p.accounts do
-					if a.state == "reported" then
-						rows[#rows + 1] = { provider = sp.name, account = a }
+					local fresh = a.fetchedAt ~= nil and now - a.fetchedAt <= M.STALE_MS
+					local l = if a.state == "reported" and fresh then weeklyLimit(a.limits) else nil
+					if l ~= nil then
+						rows[#rows + 1] = { provider = sp.name, limit = l }
 						labels[#labels + 1] = a.label
 					end
 				end
@@ -1049,20 +1042,8 @@ local function accountSegments(snapshot: Snapshot, now: number): { Segment }
 	local lastProvider: string? = nil
 	local seen: { [string]: number } = {}
 	for i, row in rows do
-		local a = row.account
-		local l = weeklyLimit(a.limits)
-		local amount = "?"
-		local tone: string? = "muted"
-		if l ~= nil and l.usedFraction ~= nil then
-			amount = formatPercent(l.usedFraction)
-			if l.windowMs ~= nil and l.windowMs ~= WEEK_MS and l.windowMs > 0 then
-				amount ..= " " .. duration(l.windowMs)
-			end
-			tone = if l.status == "exhausted" then "error" elseif l.status == "low" then "warning" else nil
-		end
-		if a.fetchedAt == nil or now - a.fetchedAt > M.STALE_MS then
-			tone = "muted"
-		end
+		local l = row.limit
+		local tone = if l.status == "exhausted" then "error" elseif l.status == "low" then "warning" else nil
 		if row.provider ~= lastProvider then
 			seen = {}
 		end
@@ -1074,7 +1055,7 @@ local function accountSegments(snapshot: Snapshot, now: number): { Segment }
 		end
 		local prefix = if row.provider ~= lastProvider then row.provider .. " " else ""
 		lastProvider = row.provider
-		segments[#segments + 1] = { text = prefix .. name .. " " .. amount, tone = tone }
+		segments[#segments + 1] = { text = prefix .. name .. " " .. formatPercent(l.usedFraction :: number), tone = tone }
 	end
 	return segments
 end
@@ -1146,13 +1127,8 @@ function M.summary(snapshot: Snapshot?, nowMs: number): Summary
 		tone = "muted"
 	end
 	local segments = accountSegments(snapshot, now)
-	if #parts > 2 then
-		-- Weekly percentages stand in for the provider/account totals; alerts stay.
-		local alerts = table.move(parts, 3, #parts, 1, {})
-		segments[#segments + 1] = { text = table.concat(alerts, " · "), tone = tone }
-	end
 	if #segments == 0 then
-		segments[1] = { text = table.concat(parts, " · "), tone = tone }
+		segments[1] = { text = "Usage · no weekly data", tone = "muted" }
 	end
 	return { text = table.concat(parts, " · "), tone = tone, segments = segments }
 end

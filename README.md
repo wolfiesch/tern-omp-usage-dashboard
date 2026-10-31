@@ -2,7 +2,7 @@
 
 View provider quotas for every account in a native Tern pane. Open **Open OMP usage** from the command palette, press **Ctrl+Alt+U**, or click the gauge summary in Tern's status bar.
 
-The status bar shows each Anthropic (Claude) and OpenAI account's weekly usage separately, for example `Claude green 87% · hill 4%  Codex green 91% · hill 3% 30d`, followed by the alert counts for all providers. The percentage is the used share of the account-wide 7-day bucket; an account without one shows its longest account-wide window, with that window named. Accounts are named by the shortest unique part of their email's local part. Exhausted accounts show in the error tone, low ones in the warning tone, and stale ones muted.
+The status bar shows each Anthropic (Claude) and OpenAI account's 7-day usage separately, for example `Claude hill 4% · moss 87%  Codex moss 91%`. The percentage is the used share of the account-wide 7-day bucket. Accounts without a 7-day bucket, logged-out accounts and accounts with stale data are left out; the dashboard still lists them. Accounts are named by the shortest unique part of their email's local part. Exhausted accounts show in the error tone and low ones in the warning tone.
 
 - Separate accounts and plans, including multiple accounts at the same provider.
 - Header chips count providers, accounts, and exhausted, low, login-required, stale and no-data accounts.
