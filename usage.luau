@@ -29,6 +29,10 @@ export type Limit = {
 	amountText: string,
 	resetsAt: number?,
 	resetLabel: string,
+	-- Window length in ms, when OMP reports one.
+	windowMs: number?,
+	-- True for a tier- or model-specific bucket rather than the account-wide one.
+	scoped: boolean,
 	-- "ok" | "low" | "exhausted" | "unknown"
 	status: string,
 	notes: { string },
@@ -52,7 +56,10 @@ export type Counts = { accounts: number, reported: number, disabled: number, unk
 
 export type Snapshot = { generatedAt: number, providers: { Provider }, counts: Counts }
 
-export type Summary = { text: string, tone: string }
+export type Segment = { text: string, tone: string? }
+
+-- `segments`: per-account weekly usage for the status line, then the alert counts.
+export type Summary = { text: string, tone: string, segments: { Segment }? }
 
 -- A report older than this (or without fetchedAt) is stale, whatever generatedAt says.
 M.STALE_MS = 10 * 60 * 1000
@@ -453,6 +460,8 @@ local function parseLimit(l: any, path: string, index: number): Limit
 		amountText = amountText(remaining, a, unit),
 		resetsAt = resetsAt,
 		resetLabel = resetLabel,
+		windowMs = durationMs,
+		scoped = tier ~= nil or modelId ~= nil,
 		status = deriveStatus(statusRaw, remaining),
 		notes = notes,
 	}
@@ -930,6 +939,146 @@ end
 ----------------------------------------------------------------------------
 -- summary
 
+local WEEK_MS = 7 * 24 * 3600 * 1000
+
+-- Providers whose accounts get their own status-line percentage, in order.
+local STATUS_PROVIDERS: { { id: string, name: string } } = {
+	{ id = "anthropic", name = "Claude" },
+	{ id = "openai-codex", name = "Codex" },
+	{ id = "openai", name = "OpenAI" },
+}
+
+-- Short account names for the status line: the email local part, minus the
+-- prefix every shown name shares, cut to the shortest unique prefix (at least
+-- four characters). One identity keeps one name across providers.
+local function shortNames(labels: { string }): { string }
+	local bases: { string } = {}
+	for i, label in labels do
+		local base = label:match("^([^@]+)@") or label
+		bases[i] = (base:gsub("[^\33-\126]", ""))
+	end
+	if #bases > 1 then
+		local common = #bases[1]
+		for _, b in bases do
+			common = math.min(common, #b)
+			for i = 1, common do
+				if b:byte(i) ~= bases[1]:byte(i) then
+					common = i - 1
+					break
+				end
+			end
+		end
+		-- Keep at least four characters of every name.
+		local shortest = math.huge
+		for _, b in bases do
+			shortest = math.min(shortest, #b)
+		end
+		common = math.min(common, math.max(0, shortest - 4))
+		if common > 0 then
+			for i, b in bases do
+				bases[i] = b:sub(common + 1)
+			end
+		end
+	end
+	local names: { string } = {}
+	for i, b in bases do
+		local n = math.min(#b, 4)
+		while n < #b do
+			local unique = true
+			for j, other in bases do
+				if j ~= i and other ~= b and other:sub(1, n) == b:sub(1, n) then
+					unique = false
+					break
+				end
+			end
+			if unique then
+				break
+			end
+			n += 1
+		end
+		names[i] = if n < 1 then "acct" else b:sub(1, n)
+	end
+	return names
+end
+
+-- The account-wide weekly bucket (the most used one if several), else the
+-- account-wide bucket with the longest window. Tier/model buckets are fallbacks only.
+local function weeklyLimit(limits: { Limit }): Limit?
+	local best: Limit? = nil
+	local function better(l: Limit, cur: Limit?): boolean
+		if cur == nil then
+			return true
+		end
+		if l.scoped ~= cur.scoped then
+			return not l.scoped
+		end
+		local lw, cw = l.windowMs == WEEK_MS, cur.windowMs == WEEK_MS
+		if lw ~= cw then
+			return lw
+		end
+		if not lw and (l.windowMs or 0) ~= (cur.windowMs or 0) then
+			return (l.windowMs or 0) > (cur.windowMs or 0)
+		end
+		return (l.usedFraction or -1) > (cur.usedFraction or -1)
+	end
+	for _, l in limits do
+		if better(l, best) then
+			best = l
+		end
+	end
+	return best
+end
+
+local function accountSegments(snapshot: Snapshot, now: number): { Segment }
+	local rows: { { provider: string, account: Account } } = {}
+	local labels: { string } = {}
+	for _, sp in STATUS_PROVIDERS do
+		for _, p in snapshot.providers do
+			if p.id == sp.id then
+				for _, a in p.accounts do
+					if a.state == "reported" then
+						rows[#rows + 1] = { provider = sp.name, account = a }
+						labels[#labels + 1] = a.label
+					end
+				end
+			end
+		end
+	end
+	local names = shortNames(labels)
+	local segments: { Segment } = {}
+	local lastProvider: string? = nil
+	local seen: { [string]: number } = {}
+	for i, row in rows do
+		local a = row.account
+		local l = weeklyLimit(a.limits)
+		local amount = "?"
+		local tone: string? = "muted"
+		if l ~= nil and l.usedFraction ~= nil then
+			amount = formatPercent(l.usedFraction)
+			if l.windowMs ~= nil and l.windowMs ~= WEEK_MS and l.windowMs > 0 then
+				amount ..= " " .. duration(l.windowMs)
+			end
+			tone = if l.status == "exhausted" then "error" elseif l.status == "low" then "warning" else nil
+		end
+		if a.fetchedAt == nil or now - a.fetchedAt > M.STALE_MS then
+			tone = "muted"
+		end
+		if row.provider ~= lastProvider then
+			seen = {}
+		end
+		-- Two accounts of one provider never share a name, even with one identity.
+		local name = names[i]
+		seen[name] = (seen[name] or 0) + 1
+		if seen[name] > 1 then
+			name = string.format("%s#%d", name, seen[name])
+		end
+		local prefix = if row.provider ~= lastProvider then row.provider .. " " else ""
+		lastProvider = row.provider
+		segments[#segments + 1] = { text = prefix .. name .. " " .. amount, tone = tone }
+	end
+	return segments
+end
+
 function M.summary(snapshot: Snapshot?, nowMs: number): Summary
 	if type(snapshot) ~= "table" or type(snapshot.providers) ~= "table" then
 		return { text = "No usage data", tone = "muted" }
@@ -996,7 +1145,16 @@ function M.summary(snapshot: Snapshot?, nowMs: number): Summary
 	elseif reported == 0 then
 		tone = "muted"
 	end
-	return { text = table.concat(parts, " · "), tone = tone }
+	local segments = accountSegments(snapshot, now)
+	if #parts > 2 then
+		-- Weekly percentages stand in for the provider/account totals; alerts stay.
+		local alerts = table.move(parts, 3, #parts, 1, {})
+		segments[#segments + 1] = { text = table.concat(alerts, " · "), tone = tone }
+	end
+	if #segments == 0 then
+		segments[1] = { text = table.concat(parts, " · "), tone = tone }
+	end
+	return { text = table.concat(parts, " · "), tone = tone, segments = segments }
 end
 
 return M

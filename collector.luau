@@ -17,11 +17,16 @@ function M.new(deps, priorLease)
 		self.status.heartbeat = now
 		local summary = if self.snapshot then deps.summary(self.snapshot, now)
 			else { text = "Usage · loading", tone = "muted" }
+		local segments = summary.segments
 		if self.status.error then
 			summary = { text = "Usage · " .. (if self.snapshot then "stale" else "unavailable"), tone = "warning" }
+			-- Keep the last known percentages, after a visible stale marker.
+			if segments then
+				segments = table.move(segments, 1, #segments, 2, { { text = summary.text, tone = summary.tone } })
+			end
 		end
 		deps.publish({
-			text = summary.text, tone = summary.tone, heartbeat = now,
+			text = summary.text, tone = summary.tone, segments = segments, heartbeat = now,
 			leaseUntil = self.leaseUntil, refreshing = self.status.refreshing,
 			error = self.status.error,
 		})

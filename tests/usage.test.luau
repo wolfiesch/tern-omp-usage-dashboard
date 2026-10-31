@@ -118,6 +118,38 @@ assert(usage.summary(aged,NOW).tone == "warning")
 local summary = usage.summary(snapshot,NOW)
 assert(not string.find(summary.text,"@",1,true) and not string.find(summary.text,"%",1,true))
 
+-- Status line: one weekly percentage per account, never merged, never a full email.
+local function windowed(id, used, ms, tier)
+	return { id = id, amount = { usedFraction = used }, scope = { tier = tier },
+		window = { durationMs = ms, resetsAt = NOW + 3600000 } }
+end
+local WEEK, MONTH = 604800000, 2592000000
+local weekly = normalize({
+	report("anthropic", "devgreen1@example.test", {
+		windowed("5h", 0.99, 18000000), windowed("7d", 0.87, WEEK), windowed("7d:fable", 1, WEEK, "fable") }),
+	report("anthropic", "devhill@example.test", { windowed("7d", 0.04, WEEK) }),
+	report("openai-codex", "devgreenwood@example.test", { windowed("primary", 0.03, MONTH) }),
+	report("openai-codex", "devgreen1@example.test", { windowed("primary", 1, WEEK) }),
+	report("zai", "other@example.test", { windowed("weekly", 0.5, WEEK) }),
+}, nil, {{provider="anthropic",id=2,type="oauth"}})
+local segs = usage.summary(weekly, NOW).segments
+local texts = {}
+for i, s in segs do texts[i] = s.text; assert(not string.find(s.text, "@", 1, true)) end
+-- Account-wide 7-day bucket wins over the 5-hour and tier buckets; other windows are labeled.
+assert(texts[1] == "Claude green1 87%", texts[1])
+assert(texts[2] == "hill 4%", texts[2])
+assert(texts[3] == "Codex green1 100%" and segs[3].tone == "error", texts[3])
+assert(texts[4] == "greenw 3% 30d", texts[4])
+assert(segs[1].tone == "warning" and segs[2].tone == nil)
+-- Other providers and logged-out accounts stay in the alert counts, not as percentages.
+assert(#segs == 5 and texts[5] == "2 exhausted · 1 login required", texts[5])
+-- Identical identities stay separate.
+local twins = usage.summary(normalize({
+	report("anthropic", "same@example.test", { windowed("7d", 0.1, WEEK) }),
+	report("anthropic", "same@example.test", { windowed("7d", 0.2, WEEK) }),
+}), NOW).segments
+assert(#twins == 2 and twins[1].text ~= twins[2].text, twins[1].text .. " / " .. twins[2].text)
+
 -- Bad schema must fail visibly, never replace a good snapshot with a fabricated empty one.
 rejects(nil)
 rejects({generatedAt=NOW})

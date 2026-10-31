@@ -2,6 +2,8 @@
 
 View provider quotas for every account in a native Tern pane. Open **Open OMP usage** from the command palette, press **Ctrl+Alt+U**, or click the gauge summary in Tern's status bar.
 
+The status bar shows each Anthropic (Claude) and OpenAI account's weekly usage separately, for example `Claude green 87% · hill 4%  Codex green 91% · hill 3% 30d`, followed by the alert counts for all providers. The percentage is the used share of the account-wide 7-day bucket; an account without one shows its longest account-wide window, with that window named. Accounts are named by the shortest unique part of their email's local part. Exhausted accounts show in the error tone, low ones in the warning tone, and stale ones muted.
+
 - Separate accounts and plans, including multiple accounts at the same provider.
 - Header chips count providers, accounts, and exhausted, low, login-required, stale and no-data accounts.
 - One aligned row per quota bucket: remaining bar, amount left, and reset or regeneration countdown. Saved resets appear as a chip.
@@ -50,7 +52,7 @@ Distinct quota IDs are preserved even when their labels or durations match. Shar
 
 ## Privacy and scope
 
-The detail pane displays local account identities. Treat screenshots accordingly. Raw provider responses, endpoints, credential-disable exceptions and process stderr are not displayed or saved by this plugin. Only aggregate summary text, a fixed diagnostic message on failure, collector heartbeat and request deadline are persisted in Tern's plugin data. Native pane content is replicated through Tern to attached clients like other Tern panes.
+The detail pane displays local account identities. Treat screenshots accordingly. Raw provider responses, endpoints, credential-disable exceptions and process stderr are not displayed or saved by this plugin. Only the status-line text (aggregate counts plus abbreviated account names and their weekly percentages), a fixed diagnostic message on failure, collector heartbeat and request deadline are persisted in Tern's plugin data. Native pane content is replicated through Tern to attached clients like other Tern panes.
 
 The status bar summarizes the local daemon's OMP accounts. A dashboard runs on the current Tern host; remote hosts require their own installation. There is no cross-host quota aggregation.
 

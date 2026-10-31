@@ -1,4 +1,5 @@
-local current = { text = "Usage · loading", tone = "muted" }
+local current = { { text = "Usage · loading", tone = "muted" } }
+local currentKey = ""
 local BLOCK = "omp-usage.dashboard"
 
 local function open(cx)
@@ -26,22 +27,35 @@ tern.command({
 })
 
 tern.chrome.status(function()
-	return {{ text = current.text, tone = current.tone, icon = "gauge", command = "plugin.omp-usage.open" }}
+	local out = {}
+	for i, seg in current do
+		out[i] = { text = seg.text, tone = seg.tone, icon = if i == 1 then "gauge" else nil,
+			command = "plugin.omp-usage.open" }
+	end
+	return out
 end)
 
 local function pollOnce()
 	local ok, record = pcall(tern.kv.get, "collector")
 	local nextValue
 	if not ok then
-		nextValue = { text = "Usage · cache error", tone = "warning" }
+		nextValue = { { text = "Usage · cache error", tone = "warning" } }
 	elseif type(record) ~= "table" or type(record.heartbeat) ~= "number"
 		or os.time() * 1000 - record.heartbeat > 15_000 then
-		nextValue = { text = "Usage · collector offline", tone = "warning" }
+		nextValue = { { text = "Usage · collector offline", tone = "warning" } }
+	elseif type(record.segments) == "table" and #record.segments > 0 then
+		nextValue = {}
+		for i, seg in record.segments do
+			nextValue[i] = { text = tostring(seg.text), tone = seg.tone }
+		end
 	else
-		nextValue = { text = record.text or "Usage · loading", tone = record.tone or "muted" }
+		nextValue = { { text = record.text or "Usage · loading", tone = record.tone or "muted" } }
 	end
-	if current.text ~= nextValue.text or current.tone ~= nextValue.tone then
-		current = nextValue
+	local parts = {}
+	for i, seg in nextValue do parts[i] = seg.text .. "\0" .. (seg.tone or "") end
+	local key = table.concat(parts, "\1")
+	if key ~= currentKey then
+		current, currentKey = nextValue, key
 		tern.chrome.refresh()
 	end
 end
